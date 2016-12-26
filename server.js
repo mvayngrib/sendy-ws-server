@@ -58,6 +58,7 @@ Server.prototype._onconnection = function (socket) {
   socket.once('disconnect', ondisconnect)
   socket.on('error', onerror)
   socket.on('message', onmessage)
+  socket.on('presence', onpresence)
 
   function register () {
     // TODO: handshake to weed out pretenders
@@ -86,6 +87,7 @@ Server.prototype._onconnection = function (socket) {
     self.emit('disconnect', handle)
     socket.removeListener('error', onerror)
     socket.removeListener('message', onmessage)
+    socket.removeListener('presence', onpresence)
     socket.once('connect', function () {
       // is this even possible?
       debug('socket reconnected!')
@@ -113,6 +115,18 @@ Server.prototype._onconnection = function (socket) {
       data: msg.data
     }, socket)
   }
+
+  function onpresence () {
+    self._announcePresence(socket)
+  }
+}
+
+Server.prototype._announcePresence = function (socket) {
+  const sockets = socket ? [socket] : values(this._sockets)
+  const identifiers = this.getConnectedHosts()
+  sockets.forEach(function (s) {
+    s.emit('presence', identifiers)
+  })
 }
 
 Server.prototype.send = function (msg, fromSocket) {
@@ -132,14 +146,27 @@ Server.prototype.send = function (msg, fromSocket) {
 
 Server.prototype.addHost = function (identifier) {
   this._hosts[identifier] = true
+  this._broadcastPresence()
 }
 
 Server.prototype.removeHost = function (identifier) {
   delete this._hosts[identifier]
+  this._broadcastPresence()
+}
+
+Server.prototype._broadcastPresence = function () {
+  // debounce
+  clearTimeout(this._broadcastPresenceTimeout)
+  this._broadcastPresenceTimeout = setTimeout(this._announcePresence.bind(this), 1)
+  if (this._broadcastPresenceTimeout.unref) this._broadcastPresenceTimeout.unref()
 }
 
 Server.prototype.getConnectedClients = function () {
   return Object.keys(this._sockets)
+}
+
+Server.prototype.getConnectedHosts = function () {
+  return Object.keys(this._hosts)
 }
 
 Server.prototype.getClient = function (handle) {
@@ -174,4 +201,10 @@ Server.prototype.destroy = function (cb) {
   this._io.close()
   this._server.close()
   if (cb) process.nextTick(cb)
+}
+
+function values (obj) {
+  return Object.keys(obj).map(function (key) {
+    return obj[key]
+  })
 }
