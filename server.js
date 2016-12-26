@@ -107,21 +107,27 @@ Server.prototype._onconnection = function (socket) {
     }
 
     debug('got message from ' + handle + ' to ' + msg.to + ' with length ' + msg.data.length)
-    if (!self.hasHost(msg.to)) {
-      return socket.emit('404', msg.to)
-    }
-
-    if (msg.data) {
-      self.emit('message', { from: handle, to: msg.to, data: msg.data })
-    }
+    self.send({
+      from: handle,
+      to: msg.to,
+      data: msg.data
+    }, socket)
   }
 }
 
-Server.prototype.send = function ({ data, from, to }) {
-  const socket = this.getClient(to)
-  if (!socket) throw new Error(`client ${to} not found`)
-
-  socket.emit('message', WSPacket.encode({ from, data }))
+Server.prototype.send = function (msg, fromSocket) {
+  const { data, from, to } = msg
+  if (this.hasHost(to)) {
+    this.emit('message', msg)
+  } else if (this.hasClient(to)) {
+    this.getClient(to).emit('message', WSPacket.encode({ from, data }))
+  } else {
+    if (fromSocket) {
+      fromSocket.emit('404', to)
+    } else {
+      throw new Error(`client ${to} not found`)
+    }
+  }
 }
 
 Server.prototype.addHost = function (identifier) {
@@ -144,6 +150,10 @@ Server.prototype.hasClient = function (handle) {
   return handle in this._sockets
 }
 
+Server.prototype.getHost = function (handle) {
+  return this._hosts[handle]
+}
+
 Server.prototype.hasHost = function (handle) {
   return handle in this._hosts
 }
@@ -152,6 +162,7 @@ Server.prototype.destroy = function (cb) {
   if (this._destroyed) return process.nextTick(cb)
 
   this._destroyed = true
+  this.emit('destroy')
   debug('destroying')
 
   for (var handle in this._sockets) {
@@ -159,7 +170,7 @@ Server.prototype.destroy = function (cb) {
     // s.removeAllListeners()
   }
 
-  delete this._sockets
+  this._sockets = {}
   this._io.close()
   this._server.close()
   if (cb) process.nextTick(cb)

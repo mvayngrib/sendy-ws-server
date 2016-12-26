@@ -22,7 +22,7 @@ module.exports = function switchboard (opts) {
   })
 
   unreliable.send = function ({ from, to, data }) {
-    if (server.hasClient(to)) {
+    if (server.hasClient(to) || server.hasHost(to)) {
       server.send({ from, to, data })
     }
   }
